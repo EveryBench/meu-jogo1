@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Island Zombie: Perfect Sprite Edition</title>
+    <title>Island Zombie: Mobile Pro Edition</title>
     <style>
         body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -16,9 +16,14 @@
         #rouletteUI { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #f1c40f; padding: 10px 20px; border: 2px solid #f1c40f; border-radius: 10px; display: none; z-index: 150; font-weight: bold; }
         .perk-card { width: 250px; margin: 10px; padding: 25px; background: #222; border: 2px solid #3498db; border-radius: 12px; cursor: pointer; text-align: center; transition: 0.3s; }
         .perk-card:hover { background: #333; border-color: #f1c40f; }
+        
+        /* Estilos dos Controles Mobile */
         .joystick-area { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255,255,255,0.1); border-radius: 50%; display: none; z-index: 200; border: 1px solid rgba(255,255,255,0.2); }
         .joystick-stick { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(255,255,255,0.3); border-radius: 50%; }
-        #fireBtn { position: absolute; bottom: 50px; right: 50px; width: 90px; height: 90px; background: rgba(231, 76, 60, 0.5); border-radius: 50%; display: none; border: 3px solid white; color: white; font-weight: bold; z-index: 200; }
+        
+        /* Botão de Tiro que vira Analógico */
+        #fireBtn { position: absolute; bottom: 40px; right: 40px; width: 120px; height: 120px; background: rgba(231, 76, 60, 0.2); border-radius: 50%; display: none; border: 2px solid rgba(255,255,255,0.3); z-index: 200; }
+        #fireStick { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(231, 76, 60, 0.6); border-radius: 50%; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -43,16 +48,16 @@
     </div>
 
     <div id="modeSelect">
-        <h2 style="margin-bottom: 20px;">SELECIONE O DISPOSITIVO</h2>
-        <button class="perk-card" onclick="initGame('desktop')">DESKTOP</button>
-        <button class="perk-card" onclick="initGame('mobile')">MOBILE</button>
+        <button class="perk-card" onclick="initGame('desktop')">DESKTOP (TECLADO)</button>
+        <button class="perk-card" onclick="initGame('mobile')">MOBILE (TOUCH)</button>
     </div>
 
     <div id="rouletteUI">SORTEANDO ARMA...</div>
     <div id="perkMenu"></div>
     <div id="waveBtn" onclick="startNextWave()">INICIAR PRÓXIMA ONDA</div>
+    
     <div id="joyArea" class="joystick-area"><div id="joyStick" class="joystick-stick"></div></div>
-    <button id="fireBtn">ATIRAR</button>
+    <div id="fireBtn"><div id="fireStick"></div></div>
 
     <canvas id="game"></canvas>
 
@@ -62,9 +67,8 @@
     const WORLD_SIZE = 600; 
     const imgMapa = new Image(); imgMapa.src = 'mapa_fundo.png';
 
-    // --- CARREGAMENTO DE SPRITES ---
+    // --- SPRITES ---
     const SPRITES = { Reto: [], Tras: [], Direita: [], Frente: [], Vertical: [] };
-    
     function loadSet(name) {
         for(let i=1; i<=3; i++) {
             const img = new Image();
@@ -74,10 +78,12 @@
     }
     ['Reto', 'Tras', 'Direita', 'Frente', 'Vertical'].forEach(loadSet);
 
+    // --- VARIÁVEIS DE ESTADO ---
     let player, bullets = [], enemies = [], powerups = [], bombs = [], keys = {}, mouse = {x:0, y:0, down:false};
     let score = 0, wave = 1, hp = 100, maxHp = 100, gameActive = false, isMobile = false;
     let currentWeapon, lastDmgTime = 0, regSpeed = 0.04, fireRateMod = 1, shield = 0, zoom = 8.0;
-    let joy = { x: 0, y: 0 }, waveState = "CLEARED", enemiesToSpawn = 0, bossSpawned = false;
+    let joy = { x: 0, y: 0 }, fireJoy = { x: 0, y: 0, active: false };
+    let waveState = "CLEARED", enemiesToSpawn = 0, bossSpawned = false;
 
     const MAP_BOUNDS = [
         {x: 295, y: 115}, {x: 390, y: 155}, {x: 505, y: 280}, {x: 430, y: 420}, 
@@ -121,9 +127,7 @@
         constructor() { 
             this.x = WORLD_SIZE/2; this.y = WORLD_SIZE/2; 
             this.r = 2.5; this.spd = 1.0; this.lastShot = 0; 
-            this.animTimer = 0;
-            this.currentSet = "Reto";
-            this.flipType = 0; 
+            this.animTimer = 0; this.currentSet = "Reto"; this.flipType = 0; 
         }
 
         update() {
@@ -138,14 +142,18 @@
             if (isInside(this.x, this.y + dy, MAP_BOUNDS)) this.y += dy;
 
             this.flipType = 0;
-            if (keys['KeyW'] && keys['KeyD']) { this.currentSet = "Frente"; }
-            else if (keys['KeyW'] && keys['KeyA']) { this.currentSet = "Frente"; this.flipType = 1; }
-            else if (keys['KeyS'] && keys['KeyD']) { this.currentSet = "Vertical"; this.flipType = 2; }
-            else if (keys['KeyS'] && keys['KeyA']) { this.currentSet = "Vertical"; this.flipType = 3; }
-            else if (keys['KeyW']) { this.currentSet = "Reto"; }
-            else if (keys['KeyS']) { this.currentSet = "Tras"; }
-            else if (keys['KeyD']) { this.currentSet = "Direita"; }
-            else if (keys['KeyA']) { this.currentSet = "Direita"; this.flipType = 1; }
+            // Lógica de Sprites unificada (Teclado ou Analógico)
+            let moveX = isMobile ? joy.x : dx;
+            let moveY = isMobile ? joy.y : dy;
+
+            if (moveY < -0.1 && moveX > 0.1) { this.currentSet = "Frente"; }
+            else if (moveY < -0.1 && moveX < -0.1) { this.currentSet = "Frente"; this.flipType = 1; }
+            else if (moveY > 0.1 && moveX > 0.1) { this.currentSet = "Vertical"; this.flipType = 2; }
+            else if (moveY > 0.1 && moveX < -0.1) { this.currentSet = "Vertical"; this.flipType = 3; }
+            else if (moveY < -0.1) { this.currentSet = "Reto"; }
+            else if (moveY > 0.1) { this.currentSet = "Tras"; }
+            else if (moveX > 0.1) { this.currentSet = "Direita"; }
+            else if (moveX < -0.1) { this.currentSet = "Direita"; this.flipType = 1; }
 
             if(Date.now() - lastDmgTime > 4000 && hp < maxHp) hp += regSpeed;
         }
@@ -153,191 +161,137 @@
         draw() {
             ctx.save();
             ctx.translate(this.x, this.y);
-
-            // --- CORREÇÃO: SOMBRA CENTRALIZADA ---
-            // Sombra oval ajustada para centralizar nos pés (offset de 2.0 e raio X de 2.5 * raio colisão)
+            // Sombra centralizada
             ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-            ctx.beginPath();
-            ctx.ellipse(0, 2.0, this.r * 2.5, this.r * 0.9, 0, 0, Math.PI * 2); 
-            ctx.fill();
+            ctx.beginPath(); ctx.ellipse(0, 2.0, this.r * 2.5, this.r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
 
-            // Animação
-            let isMoving = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']);
+            let isMoving = isMobile ? (Math.abs(joy.x) > 0.1 || Math.abs(joy.y) > 0.1) : (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']);
             let frameIdx = 0;
-            if(isMoving) {
-                this.animTimer++;
-                frameIdx = (this.animTimer % 20 < 10) ? 1 : 2;
-            } else { this.animTimer = 0; }
+            if(isMoving) { this.animTimer++; frameIdx = (this.animTimer % 20 < 10) ? 1 : 2; } else { this.animTimer = 0; }
 
             const img = SPRITES[this.currentSet][frameIdx];
             if(img && img.complete) {
-                let shouldFlip = false;
-                if(this.flipType === 1) shouldFlip = true;
-                if(this.flipType === 2 && frameIdx === 2) shouldFlip = true; 
-                if(this.flipType === 3 && (frameIdx === 0 || frameIdx === 1)) shouldFlip = true; 
-
+                let shouldFlip = (this.flipType === 1) || (this.flipType === 2 && frameIdx === 2) || (this.flipType === 3 && frameIdx <= 1);
                 if(shouldFlip) ctx.scale(-1, 1);
-                // --- CORREÇÃO: SPRITES DESACHATADAS ---
-                // Dimensões visuais aumentadas de 12x17 para 12x20 para evitar achatamento, com offset Y ajustado (-18) para manter os pés no centro (0,0).
-                ctx.drawImage(img, -6, -18, 12, 20); 
+                ctx.drawImage(img, -6, -18, 12, 20); // Proporção 12x20 corrigida
             }
-
             ctx.restore();
         }
     }
 
-    class Enemy {
-        constructor(bossType = 0) {
-            this.boss = bossType; 
-            this.r = bossType ? (bossType >= 1 ? 14 : 2) : 2.5;
-            this.hp = bossType === 1 ? 1200 : (bossType === 2 ? 3000 : 50 + (wave-1)*45);
-            this.spd = bossType ? 0.35 : 0.55 + (wave*0.04);
-            this.lastAct = 0;
-            let edge = Math.floor(Math.random() * MAP_BOUNDS.length);
-            let p1 = MAP_BOUNDS[edge]; let p2 = MAP_BOUNDS[(edge + 1) % MAP_BOUNDS.length];
-            let t = Math.random();
-            this.x = p1.x + (p2.x - p1.x) * t; this.y = p1.y + (p2.y - p1.y) * t;
-        }
-        update() {
-            let ang = Math.atan2(player.y-this.y, player.x-this.x);
-            let dx = Math.cos(ang) * this.spd; let dy = Math.sin(ang) * this.spd;
-            if(isInside(this.x + dx, this.y, MAP_BOUNDS)) this.x += dx;
-            if(isInside(this.x, this.y + dy, MAP_BOUNDS)) this.y += dy;
-            if(this.boss === 1 && Date.now() - this.lastAct > 3000) { enemies.push(new Enemy(-1)); this.lastAct = Date.now(); }
-            if(this.boss === 2 && Date.now() - this.lastAct > 2000) { bombs.push({x:this.x, y:this.y, tx:player.x, ty:player.y, life:110}); this.lastAct = Date.now(); }
-        }
-    }
-
-    function initGame(mode) {
-        isMobile = (mode === 'mobile');
-        document.getElementById('menu').style.display = 'none';
-        document.getElementById('modeSelect').style.display = 'none';
-        if(isMobile) { document.getElementById('joyArea').style.display='block'; document.getElementById('fireBtn').style.display='block'; }
-        playSnd('musica_fundo', 0.2);
-        player = new Player(); gameActive = true; startNextWave(); requestAnimationFrame(gameLoop);
-    }
-
-    function startNextWave() {
-        document.getElementById('waveBtn').style.display = 'none';
-        waveState = "SPAWNING"; bossSpawned = false;
-        enemiesToSpawn = 6 + wave * 2;
-        spawnSystem();
-    }
-
-    function spawnSystem() {
-        if(!gameActive) return;
-        if(enemiesToSpawn > 0) {
-            enemies.push(new Enemy(0)); enemiesToSpawn--;
-            setTimeout(spawnSystem, 1100 - Math.min(800, wave*35));
-        }
-    }
-
-    function showPerks() {
-        const pMenu = document.getElementById('perkMenu');
-        pMenu.style.display = 'flex'; pMenu.innerHTML = '<h2 style="color:#f1c40f">WAVE ' + wave + ' CONCLUÍDA! ESCOLHA UM UPGRADE:</h2>';
-        let picks = PERKS.sort(() => 0.5 - Math.random()).slice(0, 3);
-        picks.forEach(p => {
-            let div = document.createElement('div'); div.className = 'perk-card'; div.innerText = p.n;
-            div.onclick = () => { p.f(); pMenu.style.display = 'none'; wave++; document.getElementById('waveBtn').style.display = 'block'; document.getElementById('waveTxt').innerText = wave; playSnd('snd_click'); };
-            pMenu.appendChild(div);
-        });
-    }
-
-    function runRoulette() {
-        const ui = document.getElementById('rouletteUI'); ui.style.display = 'block';
-        let pool = []; for(let k in WEAPONS) { for(let i=0; i<WEAPONS[k].rarity; i++) pool.push(WEAPONS[k]); }
-        let spins = 0;
-        let interval = setInterval(() => {
-            let temp = pool[Math.floor(Math.random()*pool.length)]; ui.innerText = "SORTEADO: " + temp.n; spins++;
-            if(spins > 12) { clearInterval(interval); currentWeapon = temp; document.getElementById('weaponTxt').innerText = currentWeapon.n; setTimeout(() => ui.style.display = 'none', 1200); }
-        }, 90);
-    }
-
+    // --- FUNÇÃO DE TIRO ATUALIZADA (DUAL STICK) ---
     function shoot() {
         const now = Date.now();
         if(now - player.lastShot < currentWeapon.rate * fireRateMod) return;
+
+        let angle;
+        if (isMobile && fireJoy.active && (Math.abs(fireJoy.x) > 0.1 || Math.abs(fireJoy.y) > 0.1)) {
+            angle = Math.atan2(fireJoy.y, fireJoy.x);
+        } else {
+            let tx = (mouse.x - canvas.width/2) / zoom + player.x;
+            let ty = (mouse.y - canvas.height/2) / zoom + player.y;
+            angle = Math.atan2(ty - player.y, tx - player.x);
+        }
+
         playSnd(currentWeapon.snd, 0.2);
-        let tx = (mouse.x - canvas.width/2) / zoom + player.x;
-        let ty = (mouse.y - canvas.height/2) / zoom + player.y;
-        let baseAng = Math.atan2(ty - player.y, tx - player.x);
         for(let i=0; i<currentWeapon.multi; i++) {
-            let a = baseAng + (Math.random()-0.5)*(currentWeapon.spr || 0);
+            let a = angle + (Math.random()-0.5)*(currentWeapon.spr || 0);
             bullets.push({ x: player.x, y: player.y, vx: Math.cos(a)*currentWeapon.spd, vy: Math.sin(a)*currentWeapon.spd, r: currentWeapon.size || 1.3, col: currentWeapon.col, dmg: currentWeapon.dmg });
         }
         player.lastShot = now;
     }
 
+    // --- LISTENERS TOUCH (ANALÓGICOS) ---
+    const jStick = document.getElementById('joyStick');
+    const fBtn = document.getElementById('fireBtn');
+    const fStick = document.getElementById('fireStick');
+
+    function handleJoystick(e, type) {
+        const touch = Array.from(e.touches).find(t => {
+            const el = document.elementFromPoint(t.clientX, t.clientY);
+            return type === 'move' ? (el && (el.id === 'joyArea' || el.id === 'joyStick')) : (el && (el.id === 'fireBtn' || el.id === 'fireStick'));
+        });
+        if(!touch) return;
+        const area = document.getElementById(type === 'move' ? 'joyArea' : 'fireBtn');
+        const rect = area.getBoundingClientRect();
+        const centerX = rect.left + rect.width/2, centerY = rect.top + rect.height/2;
+        const dx = touch.clientX - centerX, dy = touch.clientY - centerY;
+        const dist = Math.min(Math.hypot(dx, dy), 40);
+        const ang = Math.atan2(dy, dx);
+        const finalX = Math.cos(ang) * dist, finalY = Math.sin(ang) * dist;
+
+        if(type === 'move') {
+            joy.x = finalX / 40; joy.y = finalY / 40;
+            jStick.style.transform = `translate(${finalX}px, ${finalY}px)`;
+        } else {
+            fireJoy.x = finalX / 40; fireJoy.y = finalY / 40; fireJoy.active = true; mouse.down = true;
+            fStick.style.transform = `translate(${finalX}px, ${finalY}px)`;
+        }
+    }
+
+    canvas.addEventListener('touchstart', e => { Array.from(e.changedTouches).forEach(t => { if(t.clientX > canvas.width/2) fireJoy.active = true; }); }, {passive:false});
+    window.addEventListener('touchmove', e => { handleJoystick(e, 'move'); handleJoystick(e, 'fire'); e.preventDefault(); }, {passive:false});
+    window.addEventListener('touchend', e => { 
+        if(e.touches.length === 0) { joy = {x:0, y:0}; jStick.style.transform = 'none'; fireJoy.active = false; mouse.down = false; fStick.style.transform = 'none'; }
+    });
+
+    // --- RESTANTE DO MOTOR DO JOGO ---
+    class Enemy {
+        constructor(bossType = 0) {
+            this.boss = bossType; this.r = bossType ? (bossType >= 1 ? 14 : 2) : 2.5;
+            this.hp = bossType === 1 ? 1200 : (bossType === 2 ? 3000 : 50 + (wave-1)*45);
+            this.spd = bossType ? 0.35 : 0.55 + (wave*0.04); this.lastAct = 0;
+            let edge = Math.floor(Math.random() * MAP_BOUNDS.length);
+            let p1 = MAP_BOUNDS[edge], p2 = MAP_BOUNDS[(edge + 1) % MAP_BOUNDS.length];
+            let t = Math.random(); this.x = p1.x + (p2.x - p1.x) * t; this.y = p1.y + (p2.y - p1.y) * t;
+        }
+        update() {
+            let ang = Math.atan2(player.y-this.y, player.x-this.x);
+            let dx = Math.cos(ang) * this.spd, dy = Math.sin(ang) * this.spd;
+            if(isInside(this.x + dx, this.y, MAP_BOUNDS)) this.x += dx;
+            if(isInside(this.x, this.y + dy, MAP_BOUNDS)) this.y += dy;
+        }
+    }
+
+    function initGame(mode) {
+        isMobile = (mode === 'mobile');
+        document.getElementById('menu').style.display = 'none'; document.getElementById('modeSelect').style.display = 'none';
+        if(isMobile) { document.getElementById('joyArea').style.display='block'; document.getElementById('fireBtn').style.display='block'; zoom = 6.5; }
+        playSnd('musica_fundo', 0.2); player = new Player(); gameActive = true; startNextWave(); requestAnimationFrame(gameLoop);
+    }
+
+    function startNextWave() { document.getElementById('waveBtn').style.display = 'none'; waveState = "SPAWNING"; enemiesToSpawn = 6 + wave * 2; spawnSystem(); }
+    function spawnSystem() { if(!gameActive) return; if(enemiesToSpawn > 0) { enemies.push(new Enemy(0)); enemiesToSpawn--; setTimeout(spawnSystem, 1000); } }
+
     function gameLoop() {
         if(!gameActive) return;
-        ctx.fillStyle = "#4a90e2";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        let viewW = canvas.width / zoom, viewH = canvas.height / zoom;
-        let camX = Math.max(0, Math.min(player.x - viewW / 2, WORLD_SIZE - viewW));
-        let camY = Math.max(0, Math.min(player.y - viewH / 2, WORLD_SIZE - viewH));
-
-        ctx.save();
-        ctx.scale(zoom, zoom);
-        ctx.translate(-camX, -camY);
+        ctx.fillStyle = "#4a90e2"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        let camX = Math.max(0, Math.min(player.x - (canvas.width/zoom)/2, WORLD_SIZE - (canvas.width/zoom)));
+        let camY = Math.max(0, Math.min(player.y - (canvas.height/zoom)/2, WORLD_SIZE - (canvas.height/zoom)));
+        ctx.save(); ctx.scale(zoom, zoom); ctx.translate(-camX, -camY);
         ctx.drawImage(imgMapa, 0, 0, WORLD_SIZE, WORLD_SIZE);
 
-        bombs = bombs.filter(b => {
-            let ang = Math.atan2(b.ty - b.y, b.tx - b.x); b.x += Math.cos(ang)*1.6; b.y += Math.sin(ang)*1.6;
-            ctx.fillStyle = "red"; ctx.beginPath(); ctx.arc(b.x, b.y, 1.8, 0, Math.PI*2); ctx.fill();
-            if(Math.hypot(b.x-player.x, b.y-player.y) < 4) { hp -= 18; return false; }
-            return b.life-- > 0;
-        });
-
         bullets = bullets.filter(b => {
-            b.x += b.vx; b.y += b.vy;
-            ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+            b.x += b.vx; b.y += b.vy; ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
             return !(b.x<0 || b.x>WORLD_SIZE || b.y<0 || b.y>WORLD_SIZE);
         });
 
         enemies.forEach((e, ei) => {
-            e.update();
-            ctx.fillStyle = e.boss ? (e.boss === -1 ? '#82ccdd' : '#c0392b') : '#2ecc71';
-            ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill();
-            bullets.forEach((b, bi) => {
-                if(Math.hypot(e.x-b.x, e.y-b.y) < e.r + b.r) {
-                    e.hp -= b.dmg; if(currentWeapon !== WEAPONS.VOID) bullets.splice(bi,1);
-                    if(e.hp <= 0) { playSnd('snd_morte', 0.1); enemies.splice(ei, 1); score++; if(Math.random() > 0.96) powerups.push({x: e.x, y: e.y, t: Date.now()}); }
-                }
-            });
-            if(Math.hypot(e.x-player.x, e.y-player.y) < e.r + player.r) {
-                if(shield > 0) shield--; else hp -= 0.6; lastDmgTime = Date.now();
-                if(hp <= 0) { alert("VOCÊ CAIU!"); location.reload(); }
-            }
+            e.update(); ctx.fillStyle = e.boss ? '#c0392b' : '#2ecc71'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill();
+            bullets.forEach((b, bi) => { if(Math.hypot(e.x-b.x, e.y-b.y) < e.r + b.r) { e.hp -= b.dmg; bullets.splice(bi,1); if(e.hp <= 0) { enemies.splice(ei, 1); score++; } } });
+            if(Math.hypot(e.x-player.x, e.y-player.y) < e.r + player.r) { hp -= 0.5; if(hp <= 0) location.reload(); }
         });
 
-        if(enemies.length === 0 && enemiesToSpawn <= 0 && waveState !== "CLEARED") {
-            if((wave === 5 || wave === 10) && !bossSpawned) { enemies.push(new Enemy(wave === 5 ? 1 : 2)); bossSpawned = true; }
-            else { waveState = "CLEARED"; showPerks(); }
-        }
-
-        powerups = powerups.filter(p => {
-            ctx.fillStyle = '#f1c40f'; ctx.fillRect(p.x-2.5, p.y-2.5, 5, 5);
-            if(Math.hypot(p.x-player.x, p.y-player.y) < 6) { playSnd('snd_loot'); runRoulette(); return false; }
-            return (Date.now() - p.t < 15000);
-        });
-
-        player.update();
-        player.draw();
-        ctx.restore();
-
-        document.getElementById('hpBar').value = hp; 
-        document.getElementById('killTxt').innerText = score;
-        if(mouse.down || keys['Fire']) shoot();
-        requestAnimationFrame(gameLoop);
+        player.update(); player.draw(); ctx.restore();
+        document.getElementById('hpBar').value = hp; document.getElementById('killTxt').innerText = score;
+        if(mouse.down) shoot(); requestAnimationFrame(gameLoop);
     }
 
+    window.onkeydown = e => keys[e.code] = true; window.onkeyup = e => keys[e.code] = false;
+    window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
+    window.onmousedown = () => mouse.down = true; window.onmouseup = () => mouse.down = false;
     window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     window.dispatchEvent(new Event('resize'));
-    window.onkeydown = e => keys[e.code] = true;
-    window.onkeyup = e => keys[e.code] = false;
-    window.onmousemove = e => { mouse.x = e.clientX; mouse.y = e.clientY; };
-    window.onmousedown = () => mouse.down = true;
-    window.onmouseup = () => mouse.down = false;
 </script>
 </body>
 </html>
